@@ -1,10 +1,13 @@
 package main
 
 import (
+	"errors"
 	"fmt"
-	"html/template"
 	"net/http"
 	"strconv"
+	"text/template"
+
+	"github.com/kevalsabhani/snippetbox/internal/models"
 )
 
 func (app *application) home(w http.ResponseWriter, r *http.Request) {
@@ -13,29 +16,49 @@ func (app *application) home(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ts, err := template.ParseFiles(
-		"./ui/html/pages/home.tmpl",
-		"./ui/html/base.tmpl",
-		"./ui/html/partials/nav.tmpl",
-	)
+	snippets, err := app.snippets.Latest()
 	if err != nil {
 		app.serverError(w, err)
 		return
 	}
-	err = ts.ExecuteTemplate(w, "base", nil)
-	if err != nil {
-		app.serverError(w, err)
-		return
+
+	for _, snippet := range snippets {
+		fmt.Fprintf(w, "%+v", snippet)
 	}
+
+	// ts, err := template.ParseFiles(
+	// 	"./ui/html/pages/home.tmpl",
+	// 	"./ui/html/base.tmpl",
+	// 	"./ui/html/partials/nav.tmpl",
+	// )
+	// if err != nil {
+	// 	app.serverError(w, err)
+	// 	return
+	// }
+	// err = ts.ExecuteTemplate(w, "base", nil)
+	// if err != nil {
+	// 	app.serverError(w, err)
+	// 	return
+	// }
 }
 
 func (app *application) snippetCreate(w http.ResponseWriter, r *http.Request) {
-	w.Write([]byte("Display a form for creating a new snippet..."))
-}
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		app.clientError(w, http.StatusMethodNotAllowed)
+		return
+	}
 
-func (app *application) snippetCreatePost(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusCreated)
-	w.Write([]byte("Save a new snippet..."))
+	title := "O snail"
+	content := "O snail Climb Mount Fuji, But slowly, slowly!"
+	expires := 7
+
+	id, err := app.snippets.Insert(title, content, expires)
+	if err != nil {
+		app.serverError(w, err)
+		return
+	}
+	http.Redirect(w, r, fmt.Sprintf("/snippet/view?id=%d", id), http.StatusSeeOther)
 }
 
 func (app *application) snippetView(w http.ResponseWriter, r *http.Request) {
@@ -44,6 +67,32 @@ func (app *application) snippetView(w http.ResponseWriter, r *http.Request) {
 		app.notFound(w)
 		return
 	}
-	fmt.Fprintf(w, "Display a specific snippet with ID %d...", id)
+	snippet, err := app.snippets.Get(id)
+	if err != nil {
+		if errors.Is(err, models.ErrNoRecord) {
+			app.notFound(w)
+		} else {
+			app.serverError(w, err)
+		}
+		return
+	}
+
+	files := []string{
+		"./ui/html/base.tmpl",
+		"./ui/html/partials/nav.tmpl",
+		"./ui/html/pages/view.tmpl",
+	}
+
+	// Parse the template files...
+	ts, err := template.ParseFiles(files...)
+	if err != nil {
+		app.serverError(w, err)
+		return
+	}
+
+	err = ts.ExecuteTemplate(w, "base", snippet)
+	if err != nil {
+		app.serverError(w, err)
+	}
 
 }
